@@ -1,0 +1,17 @@
+http:
+  routers:
+    api-public:
+      rule: PathPrefix(`/v1`) || Path(`/health`) || PathPrefix(`/docs`) || Path(`/openapi.json`) || Path(`/redoc`)
+      entryPoints:
+        - public
+      service: api-svc
+    api-internal:
+      rule: PathPrefix(`/internal`)
+      entryPoints:
+        - internal
+      service: api-svc
+  services:
+    api-svc:
+      loadBalancer:
+        servers:
+          - url: "http://api:8000"
