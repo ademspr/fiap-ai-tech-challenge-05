@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest-cov
+          pip install -e "./packages/platform"
+          pip install -e "./packages/contracts[dev]"
+          pip install -e "./services/api[dev]"
+          pip install -e "./services/worker[dev]"
+
+      - name: Ruff
+        run: pip install ruff && ruff check packages/platform/src packages/platform/tests packages/contracts/tests services/api/src services/api/tests services/worker/src services/worker/tests
+
+      - name: Layer boundaries
+        run: bash scripts/check_layer_boundaries.sh
+
+      - name: Pytest with coverage
+        env:
+          PYTHONPATH: services/api/src:services/worker/src:packages/contracts/src:packages/platform/src
+        run: |
+          pytest \
+            packages/contracts/tests \
+            packages/platform/tests \
+            services/api/tests \
+            services/worker/tests \
+            --cov=hackathon_contracts \
+            --cov=hackathon_platform \
+            --cov=hackathon_api \
+            --cov=hackathon_worker \
+            --cov-config=.coveragerc \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=70 \
+            -v
+
+      - name: Upload coverage XML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Docker Compose build
+        run: docker compose build api worker
+
+  compose-observability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Full stack + Loki integration
+        run: bash scripts/integration_compose_observability.sh
