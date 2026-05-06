@@ -1,0 +1,21 @@
+global:
+  checkNewVersion: false
+
+entryPoints:
+  public:
+    address: ":8080"
+  internal:
+    address: ":8081"
+  traefik:
+    address: ":8082"
+
+api:
+  dashboard: true
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: INFO

@@ -1,0 +1,16 @@
+[run]
+branch = true
+source =
+    hackathon_contracts
+    hackathon_platform
+    hackathon_api
+    hackathon_worker
+omit =
+    */tests/*
+    */alembic/*
+    */__main__.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:

@@ -1,0 +1,147 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # One canonical service name (api, worker, promtail, …): avoids duplicate Loki streams
+      # (full container name vs short name) and Explorer showing unknown level on the long form.
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+      # Underscore form: …/something_api_1 or …/project_worker_1
+      - source_labels: [__meta_docker_container_name]
+        regex: '/.+_([a-zA-Z0-9-]+)_[0-9]+$'
+        target_label: compose_service
+        replacement: "${1}"
+        action: replace
+      # Hyphen form: fiap-ai-tech-challenge-05-api-1 → api (prefer label below when present)
+      - source_labels: [__meta_docker_container_name]
+        regex: "/.+[-/]([a-zA-Z0-9_-]+)-[0-9]+$"
+        target_label: compose_service
+        replacement: "${1}"
+        action: replace
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        regex: (.+)
+        target_label: compose_service
+        replacement: "${1}"
+        action: replace
+      # UI label: container shows short name only (promtail, api, worker, …), not compose project prefix.
+      - source_labels: [compose_service]
+        regex: (.+)
+        target_label: container
+        replacement: "${1}"
+        action: replace
+    pipeline_stages:
+      - docker: {}
+      - match:
+          selector: '{compose_service=~"api|worker"}'
+          stages:
+            # Default level merges streams without JSON metadata (avoid duplicate-looking lines vs unknown).
+            - json:
+                expressions:
+                  log_level_extracted: level
+            - template:
+                source: level
+                template: '{{ if .log_level_extracted }}{{ .log_level_extracted }}{{ else }}info{{ end }}'
+            - labels:
+                level:
+      - match:
+          selector: '{compose_service="postgres"}'
+          stages:
+            - regex:
+                expression: '.*?\[\d+\]\s(?P<pg_level>ERROR|FATAL|PANIC|WARNING|LOG|NOTICE|DETAIL|HINT):'
+            - template:
+                source: level
+                template: >-
+                  {{ if eq .pg_level "ERROR" }}error{{ else if eq .pg_level "FATAL" }}fatal{{ else if eq .pg_level "PANIC" }}fatal{{ else if eq .pg_level "WARNING" }}warning{{ else }}info{{ end }}
+            - static_labels:
+                service: postgres
+            - labels:
+                level:
+      - match:
+          selector: '{compose_service="rabbitmq"}'
+          stages:
+            - regex:
+                expression: '(?i)\[(?P<rmq_level>notice|information|info|warn|warning|error|critical|alert|debug|emergency)\]'
+            - template:
+                source: level
+                template: >-
+                  {{ $v := ToLower .rmq_level }}{{ if or (eq $v "critical") (eq $v "alert") (eq $v "emergency") }}fatal{{ else if eq $v "error" }}error{{ else if or (eq $v "warn") (eq $v "warning") }}warning{{ else if or (eq $v "notice") (eq $v "info") (eq $v "information") }}info{{ else if eq $v "debug" }}debug{{ else }}info{{ end }}
+            - static_labels:
+                service: rabbitmq
+            - labels:
+                level:
+      - match:
+          selector: '{compose_service="traefik"}'
+          stages:
+            - regex:
+                expression: '^\d{4}-\d{2}-\d{2}T[^\s]+\s+(?P<tr_level>INF|ERR|WRN|DBG|FTL)\s+'
+            - regex:
+                expression: '(?i)\blevel=(?P<tr_kv>info|warn|warning|error|debug|fatal)\b'
+            - template:
+                source: level
+                template: >-
+                  {{ if .tr_kv }}{{ ToLower .tr_kv }}{{ else if .tr_level }}{{ if eq .tr_level "ERR" }}error{{ else if eq .tr_level "WRN" }}warning{{ else if eq .tr_level "DBG" }}debug{{ else if eq .tr_level "FTL" }}fatal{{ else }}info{{ end }}{{ else }}info{{ end }}
+            - static_labels:
+                service: traefik
+            - labels:
+                level:
+      - match:
+          selector: '{compose_service="minio"}'
+          stages:
+            - regex:
+                expression: '(?i)(?:^\s*(?P<min_level>(INFO|WARN|WARNING|ERROR|DEBUG|DEBU|FATAL))\s*[:\.]|\b(?P<panic>panic)\b)'
+            - template:
+                source: level
+                template: >-
+                  {{- if .panic -}}fatal{{- else if .min_level -}}{{- $m := ToLower .min_level -}}{{- if eq $m "debu" -}}debug{{- else -}}{{- $m -}}{{- end -}}{{- else -}}info{{- end -}}
+            - static_labels:
+                service: minio
+            - labels:
+                level:
+      - match:
+          selector: '{compose_service="prometheus"}'
+          stages:
+            - regex:
+                expression: '(?i)\b(?:level|lvl)=(?P<cmp>[a-zA-Z][a-zA-Z0-9_-]*)'
+            - template:
+                source: level
+                template: '{{ if .cmp }}{{ ToLower .cmp }}{{ else }}info{{ end }}'
+            - static_labels:
+                service: prometheus
+            - labels:
+                level:
+      - match:
+          selector: '{compose_service="grafana"}'
+          stages:
+            - regex:
+                expression: '(?i)\b(?:level|lvl|logger_lvl)=(?P<cmp>[a-zA-Z][a-zA-Z0-9_-]*)'
+            - template:
+                source: level
+                template: '{{ if .cmp }}{{ ToLower .cmp }}{{ else }}info{{ end }}'
+            - static_labels:
+                service: grafana
+            - labels:
+                level:
+      - match:
+          selector: '{compose_service="loki"}'
+          stages:
+            - regex:
+                expression: '(?i)\b(?:level|lvl)=(?P<cmp>[a-zA-Z][a-zA-Z0-9_-]*)'
+            - template:
+                source: level
+                template: '{{ if .cmp }}{{ ToLower .cmp }}{{ else }}info{{ end }}'
+            - static_labels:
+                service: loki
+            - labels:
+                level:

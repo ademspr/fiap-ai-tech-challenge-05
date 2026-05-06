@@ -1,0 +1,15 @@
+# Dashboard + API on entrypoint `traefik` (:8082). Default login: test / test (see README).
+http:
+  routers:
+    traefik-dashboard:
+      rule: PathPrefix(`/api`) || PathPrefix(`/dashboard`)
+      entryPoints:
+        - traefik
+      service: api@internal
+      middlewares:
+        - traefik-dashboard-auth
+  middlewares:
+    traefik-dashboard-auth:
+      basicAuth:
+        users:
+          - "test:$apr1$H6uskkkW$IgXLP6ewTrSuBkTrqE8wj/"
