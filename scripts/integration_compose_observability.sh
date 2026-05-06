@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Brings up the full Compose stack, checks HTTP health, and verifies Loki has streams
 # for api and worker logs. Run from repo root: bash scripts/integration_compose_observability.sh
-# Requires: docker-compose, curl, jq. Linux is the reference environment for Promtail+Loki.
+# Requires: docker compose (v2), curl, jq. Linux is the reference environment for Promtail+Loki.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,7 +10,7 @@ cd "$ROOT"
 cleanup() {
   local exit_code=$?
   if [[ "${KEEP_COMPOSE_UP:-}" != "1" ]]; then
-    docker-compose down -v --remove-orphans || true
+    docker compose down -v --remove-orphans || true
   fi
   exit "$exit_code"
 }
@@ -25,7 +25,7 @@ wait_for_http() {
     i=$((i + 1))
     if [[ "$i" -ge "$max_attempts" ]]; then
       echo "integration_compose_observability: timeout waiting for $name ($url)" >&2
-      docker-compose ps >&2 || true
+      docker compose ps >&2 || true
       exit 1
     fi
     sleep 2
@@ -60,7 +60,7 @@ assert_loki_nonempty() {
 }
 
 echo "Starting full stack (build)..."
-docker-compose up -d --build
+docker compose up -d --build
 
 echo "Waiting for HTTP readiness..."
 wait_for_http "http://127.0.0.1:8080/health" "traefik-public-health" 40

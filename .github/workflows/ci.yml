@@ -59,7 +59,7 @@ jobs:
           path: coverage.xml
 
       - name: Docker Compose build
-        run: docker-compose build api worker
+        run: docker compose build api worker
 
   compose-observability:
     runs-on: ubuntu-latest
