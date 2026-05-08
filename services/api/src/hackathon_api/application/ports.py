@@ -15,7 +15,7 @@ class FileStoragePort(Protocol):
 
 
 class AnalyzeJobPublisherPort(Protocol):
-    async def publish(self, job_id: UUID, diagram_storage_path: str) -> None: ...
+    async def publish(self, job_id: UUID, diagram_storage_path: str, content_type: str) -> None: ...
 
 
 class ClientAuthenticatorPort(Protocol):

@@ -16,5 +16,11 @@ class Settings(BaseSettings):
     minio_use_ssl: bool = False
     metrics_port: int = 9100
 
+    # Ollama / AI settings
+    ollama_base_url: str = "http://localhost:11434/v1"
+    ollama_model: str = "gemma4"
+    ai_timeout_seconds: int = 120
+    ai_max_retries: int = 2
+
 
 settings = Settings()

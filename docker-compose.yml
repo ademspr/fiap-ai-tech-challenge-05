@@ -81,6 +81,10 @@ services:
       MINIO_BUCKET: hackathon
       MINIO_USE_SSL: "false"
       METRICS_PORT: "9100"
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4}
+      AI_TIMEOUT_SECONDS: "120"
+      AI_MAX_RETRIES: "2"
     networks:
       - internal
     depends_on:
@@ -92,6 +96,33 @@ services:
         condition: service_started
       minio:
         condition: service_started
+      ollama:
+        condition: service_started
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-gemma4}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    networks:
+      - internal
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: no
 
   traefik:
     image: traefik:v3.2
@@ -192,3 +223,4 @@ volumes:
   pgdata:
   minio_data:
   grafana_data:
+  ollama_data:

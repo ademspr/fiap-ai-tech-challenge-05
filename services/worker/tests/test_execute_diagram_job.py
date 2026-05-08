@@ -1,10 +1,11 @@
 import base64
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from hackathon_contracts import AnalyzeDiagramJobV1, JobCompletionV1, JobPatchV1
+from hackathon_contracts import AnalyzeDiagramJobV1, JobCompletionV1, JobPatchV1, TechnicalReportV1
 
 from hackathon_worker.application.execute_diagram_job import execute_diagram_job
 from hackathon_worker.application.ports import (
@@ -17,6 +18,13 @@ from hackathon_worker.domain.fsm import WorkerJobPhase
 
 MINI_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+_FAKE_REPORT = TechnicalReportV1(
+    schema_version=1,
+    analysis_summary="Test summary.",
+    tokens_used=42,
+    model_metadata={"engine": "test-mock"},
 )
 
 
@@ -67,12 +75,17 @@ async def test_execute_diagram_job_success():
         job_id=str(job_id),
         schema_version=1,
         diagram_storage_path=rel,
+        content_type="image/png",
     ).model_dump_json()
 
     api = FakeInternalApi()
     metrics = FakePipelineMetrics()
 
-    await execute_diagram_job(body.encode("utf-8"), api, metrics, storage)
+    with patch(
+        "hackathon_worker.application.execute_diagram_job.run_real_analysis",
+        return_value=(_FAKE_REPORT, 42),
+    ):
+        await execute_diagram_job(body.encode("utf-8"), api, metrics, storage)
 
     assert len(api.completions) == 1
     assert api.completions[0][0] == job_id
