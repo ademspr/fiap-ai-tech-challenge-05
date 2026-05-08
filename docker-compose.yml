@@ -83,7 +83,7 @@ services:
       METRICS_PORT: "9100"
       OLLAMA_BASE_URL: http://ollama:11434/v1
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4}
-      AI_TIMEOUT_SECONDS: "120"
+      AI_TIMEOUT_SECONDS: "3000"
       AI_MAX_RETRIES: "2"
     networks:
       - internal
@@ -96,8 +96,8 @@ services:
         condition: service_started
       minio:
         condition: service_started
-      ollama:
-        condition: service_started
+      ollama-pull:
+        condition: service_completed_successfully
 
   ollama:
     image: ollama/ollama:latest
@@ -105,6 +105,15 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - internal
+    # GPU support (NVIDIA): requires nvidia-container-toolkit installed on the host.
+    # Remove the deploy block if no GPU is available (CPU-only fallback).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "ollama list || exit 1"]
       interval: 15s
