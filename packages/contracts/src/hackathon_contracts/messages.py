@@ -8,3 +8,7 @@ class AnalyzeDiagramJobV1(BaseModel):
         default=None,
         description="Relative path under shared volume; optional if convention-based",
     )
+    content_type: str = Field(
+        default="application/octet-stream",
+        description="MIME type of the uploaded diagram (e.g. image/png, application/pdf).",
+    )

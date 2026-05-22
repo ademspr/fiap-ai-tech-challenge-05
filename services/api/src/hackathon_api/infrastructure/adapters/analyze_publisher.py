@@ -12,11 +12,12 @@ class RabbitAnalyzeJobPublisher:
     def __init__(self, message_publisher: MessagePublisher) -> None:
         self._publisher = message_publisher
 
-    async def publish(self, job_id: UUID, diagram_storage_path: str) -> None:
+    async def publish(self, job_id: UUID, diagram_storage_path: str, content_type: str) -> None:
         queue_message = AnalyzeDiagramJobV1(
             job_id=str(job_id),
             schema_version=1,
             diagram_storage_path=diagram_storage_path,
+            content_type=content_type,
         )
         try:
             await self._publisher.publish_json(

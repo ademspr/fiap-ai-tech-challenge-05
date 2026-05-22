@@ -61,7 +61,7 @@ async def create_analysis_job(
     job = await job_persistence.jobs.set_diagram(job.id, relative_path, digest)
     await job_persistence.commit()
 
-    await analyze_publisher.publish(job.id, relative_path)
+    await analyze_publisher.publish(job.id, relative_path, content_type)
     return job
 
 

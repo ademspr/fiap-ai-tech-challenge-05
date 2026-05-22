@@ -1,15 +1,17 @@
 import hashlib
+import math
 from uuid import UUID
 
 import structlog
 from hackathon_contracts import AnalyzeDiagramJobV1, JobCompletionV1, JobPatchV1
 
-from hackathon_worker.application.ai_placeholder import run_placeholder_analysis
+from hackathon_worker.application.ai_analyzer import run_real_analysis
 from hackathon_worker.application.ports import (
     WorkerInternalApiPort,
     WorkerObjectStoragePort,
     WorkerPipelineMetricsPort,
 )
+from hackathon_worker.config import settings
 from hackathon_worker.domain.exceptions import MissingDiagramPathError, StateMachineError
 from hackathon_worker.domain.fsm import JobStateMachine, WorkerJobPhase
 
@@ -41,7 +43,15 @@ async def execute_diagram_job(
             raise MissingDiagramPathError
 
         diagram_bytes = storage.read_diagram_bytes(diagram_message.diagram_storage_path)
-        report, tokens_used = run_placeholder_analysis(diagram_bytes, "unknown")
+        report, tokens_used = run_real_analysis(
+            diagram_bytes,
+            diagram_message.content_type,
+            base_url=settings.ai_base_url,
+            model=settings.ai_model,
+            api_key=settings.ai_api_key,
+            timeout=6000000,
+            max_retries=settings.ai_max_retries,
+        )
 
         report_relative_name = f"{job_id}.json"
 
