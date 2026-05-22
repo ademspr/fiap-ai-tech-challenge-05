@@ -17,6 +17,7 @@ from hackathon_contracts import (
 )
 from hackathon_worker.application.prompt_builder import build_system_prompt, build_user_prompt
 from hackathon_worker.application.pdf_converter import pdf_to_png_bytes
+from hackathon_worker.application.image_preprocessor import preprocess_image
 
 log = structlog.get_logger(__name__)
 
@@ -51,10 +52,12 @@ _FALLBACK_REPORT = TechnicalReportV1(
 
 
 def _diagram_to_images(diagram_bytes: bytes, content_type: str) -> list[bytes]:
-    """Return a list of PNG image bytes from the diagram (handles PDF multi-page)."""
+    """Return preprocessed PNG images from the diagram (handles PDF multi-page)."""
     if content_type == "application/pdf":
-        return pdf_to_png_bytes(diagram_bytes, max_pages=3)
-    return [diagram_bytes]
+        raw_pages = pdf_to_png_bytes(diagram_bytes, max_pages=3)
+    else:
+        raw_pages = [diagram_bytes]
+    return [preprocess_image(page) for page in raw_pages]
 
 
 def _build_image_messages(images: list[bytes]) -> list[dict]:
