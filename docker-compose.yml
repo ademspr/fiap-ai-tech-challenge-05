@@ -5,6 +5,8 @@ services:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
       POSTGRES_DB: api_db
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -23,7 +25,7 @@ services:
       MINIO_ROOT_PASSWORD: minio12345
       MINIO_PROMETHEUS_AUTH_TYPE: public
     volumes:
-      - minio_data:/data
+      - ./minio:/data
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -37,6 +39,9 @@ services:
       - ./observability/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     networks:
       - internal
+    ports:
+      - "15672:15672"
+      - "5672:5672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
@@ -47,6 +52,8 @@ services:
     build:
       context: .
       dockerfile: services/api/Dockerfile
+    ports:
+      - "8081:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://app:app@postgres:5432/api_db
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
@@ -81,8 +88,12 @@ services:
       MINIO_BUCKET: hackathon
       MINIO_USE_SSL: "false"
       METRICS_PORT: "9100"
-      OLLAMA_BASE_URL: http://ollama:11434/v1
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4}
+      CLOUD_BASE_URL: ${CLOUD_BASE_URL:-}
+      CLOUD_API_KEY: ${CLOUD_API_KEY:-}
+      CLOUD_MODEL: ${CLOUD_MODEL:-}
       AI_TIMEOUT_SECONDS: "3000"
       AI_MAX_RETRIES: "2"
     networks:
@@ -96,42 +107,57 @@ services:
         condition: service_started
       minio:
         condition: service_started
-      ollama-pull:
-        condition: service_completed_successfully
+      # ollama-pull:
+      #   condition: service_completed_successfully
 
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - internal
-    # GPU support (NVIDIA): requires nvidia-container-toolkit installed on the host.
-    # Remove the deploy block if no GPU is available (CPU-only fallback).
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   volumes:
+  #     - /usr/share/ollama/.ollama:/root/.ollama
+  #   networks:
+  #     - internal
+  #   # GPU support (NVIDIA): requires nvidia-container-toolkit installed on the host.
+  #   # Remove the deploy block if no GPU is available (CPU-only fallback).
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+  #   ports:
+  #     - "11434:11434"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "ollama list || exit 1"]
+  #     interval: 15s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 30s
 
-  ollama-pull:
-    image: ollama/ollama:latest
-    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-gemma4}"]
+  # ollama-pull:
+  #   image: ollama/ollama:latest
+  #   entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-gemma4}"]
+  #   environment:
+  #     OLLAMA_HOST: http://ollama:11434
+  #   networks:
+  #     - internal
+  #   depends_on:
+  #     ollama:
+  #       condition: service_healthy
+  #   restart: no
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
     environment:
-      OLLAMA_HOST: http://ollama:11434
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
     networks:
       - internal
     depends_on:
-      ollama:
+      postgres:
         condition: service_healthy
-    restart: no
 
   traefik:
     image: traefik:v3.2

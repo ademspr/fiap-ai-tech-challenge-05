@@ -92,6 +92,7 @@ def test_run_real_analysis_success():
             "image/png",
             base_url="http://localhost:11434/v1",
             model="gemma4",
+            api_key="ollama",
             timeout=30,
             max_retries=0,
         )
@@ -114,6 +115,7 @@ def test_run_real_analysis_returns_fallback_on_json_error():
             "image/png",
             base_url="http://localhost:11434/v1",
             model="gemma4",
+            api_key="ollama",
             timeout=30,
             max_retries=0,
         )
@@ -146,6 +148,7 @@ def test_run_real_analysis_retries_on_rate_limit():
             "image/png",
             base_url="http://localhost:11434/v1",
             model="gemma4",
+            api_key="ollama",
             timeout=30,
             max_retries=1,
         )
@@ -167,6 +170,7 @@ def test_run_real_analysis_tokens_used_from_response():
             "image/jpeg",
             base_url="http://localhost:11434/v1",
             model="gemma4",
+            api_key="ollama",
             timeout=30,
             max_retries=0,
         )
@@ -190,6 +194,7 @@ def test_run_real_analysis_pdf_triggers_converter():
             "application/pdf",
             base_url="http://localhost:11434/v1",
             model="gemma4",
+            api_key="ollama",
             timeout=30,
             max_retries=0,
         )

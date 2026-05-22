@@ -92,16 +92,17 @@ def run_real_analysis(
     *,
     base_url: str,
     model: str,
+    api_key: str,
     timeout: int,
     max_retries: int,
 ) -> tuple[TechnicalReportV1, int]:
-    """Analyse a diagram using the configured Ollama LLM.
+    """Analyse a diagram using the configured LLM provider.
 
     Returns:
         Tuple of (TechnicalReportV1, tokens_used).
         On unrecoverable LLM error, returns a fallback report with tokens_used=0.
     """
-    client = OpenAI(base_url=base_url, api_key="ollama", timeout=timeout)
+    client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
 
     images = _diagram_to_images(diagram_bytes, content_type)
     image_items = _build_image_messages(images)

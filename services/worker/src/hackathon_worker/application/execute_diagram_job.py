@@ -1,4 +1,5 @@
 import hashlib
+import math
 from uuid import UUID
 
 import structlog
@@ -45,9 +46,10 @@ async def execute_diagram_job(
         report, tokens_used = run_real_analysis(
             diagram_bytes,
             diagram_message.content_type,
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_model,
-            timeout=settings.ai_timeout_seconds,
+            base_url=settings.ai_base_url,
+            model=settings.ai_model,
+            api_key=settings.ai_api_key,
+            timeout=6000000,
             max_retries=settings.ai_max_retries,
         )
 
