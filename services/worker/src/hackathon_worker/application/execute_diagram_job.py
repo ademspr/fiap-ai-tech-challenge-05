@@ -1,5 +1,4 @@
 import hashlib
-import math
 from uuid import UUID
 
 import structlog
