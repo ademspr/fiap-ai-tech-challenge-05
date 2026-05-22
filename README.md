@@ -225,145 +225,145 @@ Structured report content lives **only on disk** as JSON conforming to `Technica
 
 Internal (Traefik `internal` only): `PATCH /internal/v1/analysis-jobs/{id}`, `POST /internal/v1/analysis-jobs/{id}/completion` with header `X-Internal-Token`.
 
-## IA Pipeline
+## AI Pipeline
 
-### Abordagem escolhida
+### Chosen approach
 
-O worker utiliza um **LLM multimodal local via Ollama** (API compatível com OpenAI) para analisar diagramas de arquitetura.
+The worker uses a **local multimodal LLM via Ollama** (OpenAI-compatible API) to analyze architecture diagrams.
 
-**Justificativa**: Ollama permite executar modelos de linguagem localmente (sem dependência de APIs externas pagas), com a mesma interface do OpenAI Python SDK. O modelo `gemma4` suporta entrada multimodal (texto + imagem), sendo adequado para identificar componentes e riscos em diagramas arquiteturais.
+**Rationale**: Ollama allows running language models locally (no dependency on paid external APIs), exposing the same interface as the OpenAI Python SDK. The `gemma4` model supports multimodal input (text + image), which is suitable for identifying components and risks in architectural diagrams.
 
-### Fluxo da IA
+### AI flow
 
 ```
-Diagrama (PNG/JPEG/PDF)
+Diagram (PNG/JPEG/PDF)
       │
       ▼
-[pdf_converter.py]  ← somente para PDF: converte páginas em imagens PNG
+[pdf_converter.py]  ← PDF only: converts pages into PNG images
       │
       ▼
-[prompt_builder.py] ← constrói system prompt (JSON schema + guardrails) e user prompt
+[prompt_builder.py] ← builds system prompt (JSON schema + guardrails) and user prompt
       │
       ▼
-[ai_analyzer.py]    ← envia imagem base64 + prompts para Ollama (gpt4-compatible API)
+[ai_analyzer.py]    ← sends base64 image + prompts to Ollama (OpenAI-compatible API)
       │
       ▼
-Ollama LLM (gemma4) ← processa visão + texto, devolve JSON
+Ollama LLM (gemma4) ← processes vision + text, returns JSON
       │
       ▼
-[Pydantic validation] ← valida output contra TechnicalReportV1
+[Pydantic validation] ← validates output against TechnicalReportV1
       │
       ▼
-[TechnicalReportV1] ← análise_summary, componentes, riscos, recomendações, tokens_used
+[TechnicalReportV1] ← analysis_summary, components, risks, recommendations, tokens_used
       │
       ▼
-MinIO (reports/<job_id>.json) ← resultado persistido
+MinIO (reports/<job_id>.json) ← persisted result
       │
       ▼
-API interna ← débito de tokens_used do saldo do cliente
+Internal API ← debits tokens_used from the client balance
 ```
 
-### Detalhe técnico
+### Technical details
 
-- **Módulo de análise**: `services/worker/src/hackathon_worker/application/ai_analyzer.py`
-- **Construtor de prompts**: `services/worker/src/hackathon_worker/application/prompt_builder.py`
-- **Conversor PDF**: `services/worker/src/hackathon_worker/application/pdf_converter.py`
-- **Contagem de tokens**: capturada de `response.usage.total_tokens` da resposta do Ollama e usada para debitar o saldo do cliente (`JobCompletionV1.tokens_used`)
-- **Temperatura**: `0.2` — baixa para reduzir variabilidade e alucinações
-- **Retry**: backoff exponencial para `RateLimitError`, até `AI_MAX_RETRIES` tentativas
+- **Analysis module**: `services/worker/src/hackathon_worker/application/ai_analyzer.py`
+- **Prompt builder**: `services/worker/src/hackathon_worker/application/prompt_builder.py`
+- **PDF converter**: `services/worker/src/hackathon_worker/application/pdf_converter.py`
+- **Token counting**: captured from `response.usage.total_tokens` in the Ollama response and used to debit the client balance (`JobCompletionV1.tokens_used`)
+- **Temperature**: `0.2` — low to reduce variability and hallucinations
+- **Retry**: exponential backoff for `RateLimitError`, up to `AI_MAX_RETRIES` attempts
 
-### Guardrails implementados
+### Implemented guardrails
 
-| Guardrail | Implementação |
-|-----------|--------------|
-| **Formato de saída estruturado** | System prompt instrui explicitamente a retornar APENAS JSON sem markdown |
-| **Validação de schema** | `TechnicalReportV1.model_validate(data)` — recusa campos inválidos ou faltantes |
-| **Restrição de escopo** | Prompt proíbe inventar componentes não visíveis no diagrama |
-| **Fallback em falha** | Output inválido após todas as tentativas retorna relatório de fallback em vez de quebrar o job |
-| **Limite de páginas (PDF)** | No máximo 3 páginas por análise para evitar tokens excessivos |
-| **Retry com backoff** | Rate limits e timeouts são retentados sem propagação imediata de erro |
-| **Log de falhas** | Toda resposta inválida é logada via structlog antes do fallback |
+| Guardrail | Implementation |
+|-----------|----------------|
+| **Structured output format** | System prompt explicitly instructs to return ONLY JSON without markdown |
+| **Schema validation** | `TechnicalReportV1.model_validate(data)` — rejects invalid or missing fields |
+| **Scope restriction** | Prompt forbids inventing components that are not visible in the diagram |
+| **Failure fallback** | Invalid output after all attempts returns a fallback report instead of breaking the job |
+| **Page limit (PDF)** | At most 3 pages per analysis to avoid excessive tokens |
+| **Retry with backoff** | Rate limits and timeouts are retried without immediate error propagation |
+| **Failure logging** | Every invalid response is logged via structlog before fallback |
 
-### Configuração Ollama
+### Ollama configuration
 
 ```bash
-# Puxar modelo antes de subir o worker (ou aguardar ollama-pull completar)
+# Pull the model before starting the worker (or wait for ollama-pull to complete)
 docker-compose exec ollama ollama pull gemma4
 
-# Variáveis de ambiente (worker)
-OLLAMA_BASE_URL=http://ollama:11434/v1   # URL do servidor Ollama
-OLLAMA_MODEL=gemma4                      # Modelo (configurável via .env)
-AI_TIMEOUT_SECONDS=120                  # Timeout por requisição
-AI_MAX_RETRIES=2                        # Retentativas em erro transitório
+# Environment variables (worker)
+OLLAMA_BASE_URL=http://ollama:11434/v1   # Ollama server URL
+OLLAMA_MODEL=gemma4                      # Model (configurable via .env)
+AI_TIMEOUT_SECONDS=120                   # Timeout per request
+AI_MAX_RETRIES=2                         # Retries on transient errors
 ```
 
-### Limitações e riscos do modelo
+### Model limitations and risks
 
-- **Qualidade dependente do diagrama**: diagramas com texto ilegível ou em idioma não-inglês podem resultar em análises imprecisas
-- **Alucinações**: o modelo pode nomear padrões arquiteturais não presentes; o guardrail de scope reduz mas não elimina
-- **Latência**: modelos locais têm latência maior que APIs cloud; timeout configurado em 120s
-- **Modelos vision**: `gemma4` requer que o servidor Ollama suporte entradas multimodais; versões futuras podem mudar a API
-- **Sem moderação de conteúdo**: não há chamada a Moderation API; entradas maliciosas são mitigadas pelo MIME allowlist na API
+- **Quality depends on the diagram**: diagrams with illegible text or non-English content may produce inaccurate analyses
+- **Hallucinations**: the model may name architectural patterns that are not present; the scope guardrail reduces but does not eliminate this
+- **Latency**: local models have higher latency than cloud APIs; timeout is configured at 120s
+- **Vision models**: `gemma4` requires the Ollama server to support multimodal input; future versions may change the API
+- **No content moderation**: there is no call to a Moderation API; malicious inputs are mitigated by the MIME allowlist in the API
 
 
 
-## Segurança
+## Security
 
-Esta seção documenta as práticas de segurança adotadas no MVP, conforme requisitos do hackathon.
+This section documents the security practices adopted in the MVP, in accordance with the hackathon requirements.
 
-### Requisitos de segurança adotados
+### Adopted security requirements
 
-| Área | Prática adotada |
-|------|----------------|
-| **Autenticação de clientes** | Bearer token com hash bcrypt; prefixo para lookup rápido sem expor o hash completo |
-| **Separação de entrypoints** | Traefik expõe `/v1` no entrypoint público (`:8080`) e `/internal` apenas na rede Docker interna (`:8081`, não publicado no host) |
-| **Token interno** | `X-Internal-Token` obrigatório nas rotas internas; worker e API usam o mesmo segredo via `.env` |
-| **Validação de upload** | Allowlist de MIME types (`image/png`, `image/jpeg`, `application/pdf`) + tamanho máximo configurável (`MAX_UPLOAD_BYTES`, padrão 25 MB) |
-| **Sem dados sensíveis no DB** | Bytes de diagramas e relatórios nunca armazenados no Postgres; apenas chaves relativas e checksums |
-| **Token balance** | Débito de tokens ocorre em transação atômica no Postgres após conclusão; saldo insuficiente bloqueia upload |
+| Area | Adopted practice |
+|------|------------------|
+| **Client authentication** | Bearer token with bcrypt hash; prefix used for fast lookup without exposing the full hash |
+| **Entrypoint separation** | Traefik exposes `/v1` on the public entrypoint (`:8080`) and `/internal` only on the internal Docker network (`:8081`, not published on the host) |
+| **Internal token** | `X-Internal-Token` is required on internal routes; worker and API share the same secret via `.env` |
+| **Upload validation** | MIME type allowlist (`image/png`, `image/jpeg`, `application/pdf`) + configurable maximum size (`MAX_UPLOAD_BYTES`, default 25 MB) |
+| **No sensitive data in the DB** | Diagram and report bytes are never stored in Postgres; only relative keys and checksums |
+| **Token balance** | Token debit happens in an atomic Postgres transaction after completion; insufficient balance blocks the upload |
 
-### Validação e tratamento de entradas não confiáveis
+### Validation and handling of untrusted input
 
-- **MIME type**: verificado no `UploadPolicy.validate_new_upload()` antes de qualquer I/O
-- **Tamanho do arquivo**: verificado em memória antes de salvar no MinIO
-- **Paths de armazenamento**: construídos programaticamente via `object_keys.py`; não há interpolação de input do usuário em paths
-- **Payloads de mensagem**: `AnalyzeDiagramJobV1` validado por Pydantic ao consumir da fila; mensagens inválidas são rejeitadas sem requeue e vão para a DLQ
-- **Relatórios**: `TechnicalReportV1.model_validate()` valida o JSON ao servir o relatório ao cliente
+- **MIME type**: verified in `UploadPolicy.validate_new_upload()` before any I/O
+- **File size**: verified in memory before saving to MinIO
+- **Storage paths**: built programmatically via `object_keys.py`; no user input is interpolated into paths
+- **Message payloads**: `AnalyzeDiagramJobV1` is validated by Pydantic when consumed from the queue; invalid messages are rejected without requeue and routed to the DLQ
+- **Reports**: `TechnicalReportV1.model_validate()` validates the JSON when serving the report to the client
 
-### Uso controlado de modelos de IA
+### Controlled use of AI models
 
-- **Modelo local**: Ollama roda na rede Docker interna; nenhum dado de diagrama sai para serviços externos
-- **Temperatura baixa** (`0.2`): reduz variabilidade e respostas criativas não solicitadas
-- **System prompt com restrições explícitas**: instrui o modelo a retornar apenas JSON estruturado e não inventar componentes
-- **Validação de schema**: todo output da LLM é validado contra `TechnicalReportV1` via Pydantic antes de ser persistido
-- **Fallback controlado**: output inválido gera um relatório de fallback — o job não falha silenciosamente
-- **Limite de páginas PDF**: máximo de 3 páginas por análise para controlar custo computacional e tokens
+- **Local model**: Ollama runs on the internal Docker network; no diagram data leaves to external services
+- **Low temperature** (`0.2`): reduces variability and unsolicited creative responses
+- **System prompt with explicit restrictions**: instructs the model to return only structured JSON and not invent components
+- **Schema validation**: every LLM output is validated against `TechnicalReportV1` via Pydantic before being persisted
+- **Controlled fallback**: invalid output produces a fallback report — the job does not fail silently
+- **PDF page limit**: at most 3 pages per analysis to control compute cost and tokens
 
-### Tratamento seguro de falhas da IA
+### Safe handling of AI failures
 
-- **Timeout**: `AI_TIMEOUT_SECONDS=120` por requisição; `APITimeoutError` é capturado e retentado
-- **Rate limit**: `RateLimitError` dispara backoff exponencial (`2^attempt` segundos)
-- **JSON inválido**: `ValueError`/`ValidationError` no parsing → retry → fallback após esgotar retries
-- **Erros de API**: logados via structlog com `job_id`, modelo, número de tentativas e mensagem
+- **Timeout**: `AI_TIMEOUT_SECONDS=120` per request; `APITimeoutError` is caught and retried
+- **Rate limit**: `RateLimitError` triggers exponential backoff (`2^attempt` seconds)
+- **Invalid JSON**: `ValueError`/`ValidationError` during parsing → retry → fallback after exhausting retries
+- **API errors**: logged via structlog with `job_id`, model, attempt count, and message
 
-### Comunicação entre serviços
+### Service-to-service communication
 
-- **Worker → API interna**: `X-Internal-Token` no header; Traefik não roteia `/internal/*` pelo entrypoint público
-- **Worker → MinIO**: credenciais via variáveis de ambiente; conexão na rede Docker interna
-- **Worker → Ollama**: na rede Docker interna (`internal`); Ollama não tem porta publicada no host
-- **Rede Docker**: serviços na rede `internal` não são acessíveis diretamente do host
+- **Worker → internal API**: `X-Internal-Token` header; Traefik does not route `/internal/*` through the public entrypoint
+- **Worker → MinIO**: credentials via environment variables; connection on the internal Docker network
+- **Worker → Ollama**: on the internal Docker network (`internal`); Ollama does not publish a port on the host
+- **Docker network**: services on the `internal` network are not directly reachable from the host
 
-### Principais riscos e limitações
+### Main risks and limitations
 
-| Risco | Severidade | Mitigação |
-|-------|-----------|-----------|
-| Credenciais padrão (MinIO, Grafana, Postgres) | Alta em produção | Substituir via `.env` antes de qualquer deploy compartilhado |
-| Bearer token em texto plano no header HTTP | Média | Usar TLS em produção |
-| Prompt injection via conteúdo do diagrama | Baixa | Diagrama é tratado como imagem (bytes); system prompt com restrições |
-| Alucinações do LLM no relatório | Baixa-Média | Validação de schema + guardrail de scope no prompt |
-| Ollama sem autenticação | Baixa (rede interna) | Apenas acessível na rede Docker `internal` |
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Default credentials (MinIO, Grafana, Postgres) | High in production | Replace via `.env` before any shared deploy |
+| Bearer token in plain text on the HTTP header | Medium | Use TLS in production |
+| Prompt injection via diagram content | Low | Diagram is treated as an image (bytes); system prompt with restrictions |
+| LLM hallucinations in the report | Low–Medium | Schema validation + scope guardrail in the prompt |
+| Ollama without authentication | Low (internal network) | Only reachable on the `internal` Docker network |
 
-### Credenciais padrão (demo)
+### Default credentials (demo)
 
 | Surface | Defaults (demo / Compose) | Where to override |
 |---------|---------------------------|-------------------|
@@ -372,7 +372,7 @@ Esta seção documenta as práticas de segurança adotadas no MVP, conforme requ
 | **Grafana** | **`admin` / `admin`** | `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD` in Compose. |
 | **PostgreSQL** (Compose) | **`app` / `app`**, DB **`api_db`** | `POSTGRES_*` in Compose. |
 
-> **Atenção**: estas são credenciais de demonstração local. Em qualquer ambiente compartilhado, rotacione via `.env` antes de subir o stack. Promtail precisa de acesso ao Docker socket; mTLS não está configurado neste MVP.
+> **Warning**: these are local demo credentials. In any shared environment, rotate them via `.env` before bringing up the stack. Promtail requires access to the Docker socket; mTLS is not configured in this MVP.
 
 
 
